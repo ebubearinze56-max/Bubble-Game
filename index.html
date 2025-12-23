@@ -1,4 +1,4 @@
-  <!DOCTYPE html>
+   <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -107,6 +107,27 @@
             100% { transform: scale(1.5); opacity: 0; }
         }
         
+        .bubble.danger {
+            animation: pulse 1s infinite alternate;
+            border: 3px solid #ff4757;
+        }
+        
+        @keyframes pulse {
+            from { box-shadow: 0 0 10px #ff4757; }
+            to { box-shadow: 0 0 20px #ff4757; }
+        }
+        
+        .danger-zone {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 20px;
+            background: rgba(255, 71, 87, 0.7);
+            border-top: 2px solid #ff4757;
+            transition: height 0.3s;
+        }
+        
         .controls {
             display: flex;
             justify-content: space-between;
@@ -152,6 +173,63 @@
             color: white;
         }
         
+        .game-over-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            border-radius: 15px;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.5s, visibility 0.5s;
+        }
+        
+        .game-over-screen.active {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        .game-over-title {
+            font-size: 3.5rem;
+            margin-bottom: 20px;
+            background: linear-gradient(to right, #ff4757, #ff6b81);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            text-align: center;
+        }
+        
+        .game-over-stats {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 25px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+            width: 80%;
+            max-width: 400px;
+        }
+        
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 15px;
+            font-size: 1.2rem;
+        }
+        
+        .stat-label {
+            color: #a0e7ff;
+        }
+        
+        .stat-value {
+            font-weight: bold;
+        }
+        
         .instructions {
             background: rgba(255, 255, 255, 0.1);
             padding: 15px;
@@ -167,6 +245,11 @@
         .instructions p {
             line-height: 1.5;
             margin-bottom: 8px;
+        }
+        
+        .warning {
+            color: #ff6b6b;
+            font-weight: bold;
         }
         
         @media (max-width: 600px) {
@@ -186,13 +269,17 @@
             h1 {
                 font-size: 2.2rem;
             }
+            
+            .game-over-title {
+                font-size: 2.5rem;
+            }
         }
     </style>
 </head>
 <body>
     <header>
         <h1>Bubble Popper Game</h1>
-        <p>Pop as many bubbles as you can before time runs out!</p>
+        <p>Pop bubbles before they fill up the screen!</p>
     </header>
     
     <div class="game-container">
@@ -206,13 +293,36 @@
                 <div id="timer" class="info-value">60</div>
             </div>
             <div class="info-box">
-                <div class="info-label">BUBBLES POPPED</div>
-                <div id="bubbles-popped" class="info-value">0</div>
+                <div class="info-label">BUBBLES ON SCREEN</div>
+                <div id="bubble-count" class="info-value">0</div>
             </div>
         </div>
         
         <div class="game-board" id="game-board">
-            <!-- Bubbles will be generated here -->
+            <div class="danger-zone" id="danger-zone"></div>
+            <!-- Game over screen -->
+            <div class="game-over-screen" id="game-over-screen">
+                <div class="game-over-title" id="game-over-title">GAME OVER</div>
+                <div class="game-over-stats">
+                    <div class="stat-item">
+                        <span class="stat-label">Final Score:</span>
+                        <span class="stat-value" id="final-score">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Bubbles Popped:</span>
+                        <span class="stat-value" id="final-bubbles">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Time Survived:</span>
+                        <span class="stat-value" id="final-time">0s</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Difficulty:</span>
+                        <span class="stat-value" id="final-difficulty">Easy</span>
+                    </div>
+                </div>
+                <button id="restart-btn" class="start-btn">PLAY AGAIN</button>
+            </div>
         </div>
         
         <div class="controls">
@@ -224,11 +334,12 @@
         
         <div class="instructions">
             <h3>How to Play:</h3>
-            <p>1. Click the START GAME button to begin.</p>
-            <p>2. Click on bubbles to pop them and earn points.</p>
-            <p>3. Larger bubbles are worth more points but disappear faster.</p>
-            <p>4. Choose a difficulty level before starting the game.</p>
-            <p>5. Try to get the highest score before time runs out!</p>
+            <p>1. Click bubbles to pop them and earn points.</p>
+            <p>2. Larger bubbles are worth more points.</p>
+            <p>3. Watch out! If too many bubbles fill the screen, you lose!</p>
+            <p class="warning">FAIL CONDITION: Game ends if bubble count exceeds the limit!</p>
+            <p>4. Choose a difficulty level - harder levels have faster bubble spawns.</p>
+            <p>5. Try to survive as long as possible and get the highest score!</p>
         </div>
     </div>
 
@@ -240,37 +351,59 @@
         let gameActive = false;
         let gameTimer;
         let bubbleInterval;
+        let dangerZoneHeight = 0;
+        let gameStartTime = 0;
+        let timeSurvived = 0;
         let difficulty = "easy"; // easy, medium, hard
+        
+        // Failure condition variables
+        let currentBubbles = 0;
+        let maxBubblesAllowed = 25;
+        let dangerThreshold = 20; // When to show warning
         
         // DOM elements
         const gameBoard = document.getElementById('game-board');
         const scoreElement = document.getElementById('score');
         const timerElement = document.getElementById('timer');
-        const bubblesPoppedElement = document.getElementById('bubbles-popped');
+        const bubbleCountElement = document.getElementById('bubble-count');
+        const dangerZone = document.getElementById('danger-zone');
         const startButton = document.getElementById('start-btn');
         const easyButton = document.getElementById('easy-btn');
         const mediumButton = document.getElementById('medium-btn');
         const hardButton = document.getElementById('hard-btn');
+        const gameOverScreen = document.getElementById('game-over-screen');
+        const finalScoreElement = document.getElementById('final-score');
+        const finalBubblesElement = document.getElementById('final-bubbles');
+        const finalTimeElement = document.getElementById('final-time');
+        const finalDifficultyElement = document.getElementById('final-difficulty');
+        const restartButton = document.getElementById('restart-btn');
+        const gameOverTitle = document.getElementById('game-over-title');
         
         // Difficulty settings
         const difficultySettings = {
             easy: {
                 bubbleSpawnRate: 800, // ms between bubble spawns
                 bubbleLifespan: 6000, // ms before bubble disappears
-                maxBubbles: 15,
-                timeBonus: 5 // seconds added for popping bubbles
+                maxBubblesAllowed: 25,
+                dangerThreshold: 20,
+                timeBonus: 3, // seconds added for popping bubbles
+                pointsMultiplier: 1
             },
             medium: {
                 bubbleSpawnRate: 600,
                 bubbleLifespan: 4500,
-                maxBubbles: 20,
-                timeBonus: 3
+                maxBubblesAllowed: 20,
+                dangerThreshold: 15,
+                timeBonus: 2,
+                pointsMultiplier: 1.5
             },
             hard: {
                 bubbleSpawnRate: 400,
                 bubbleLifespan: 3000,
-                maxBubbles: 25,
-                timeBonus: 2
+                maxBubblesAllowed: 15,
+                dangerThreshold: 10,
+                timeBonus: 1,
+                pointsMultiplier: 2
             }
         };
         
@@ -281,6 +414,7 @@
             easyButton.addEventListener('click', () => setDifficulty('easy'));
             mediumButton.addEventListener('click', () => setDifficulty('medium'));
             hardButton.addEventListener('click', () => setDifficulty('hard'));
+            restartButton.addEventListener('click', restartGame);
             
             // Display initial values
             updateDisplay();
@@ -303,6 +437,11 @@
                 hardButton.classList.add('active');
             }
             
+            // Update difficulty settings
+            const settings = difficultySettings[difficulty];
+            maxBubblesAllowed = settings.maxBubblesAllowed;
+            dangerThreshold = settings.dangerThreshold;
+            
             // If game is active, restart with new difficulty
             if (gameActive) {
                 clearInterval(bubbleInterval);
@@ -318,10 +457,20 @@
             score = 0;
             timeLeft = 60;
             bubblesPopped = 0;
+            currentBubbles = 0;
             gameActive = true;
+            gameStartTime = Date.now();
+            dangerZoneHeight = 0;
+            dangerZone.style.height = '0px';
+            
+            // Hide game over screen
+            gameOverScreen.classList.remove('active');
             
             // Clear the game board
             gameBoard.innerHTML = '';
+            // Re-add danger zone and game over screen
+            gameBoard.appendChild(dangerZone);
+            gameBoard.appendChild(gameOverScreen);
             
             // Update button text
             startButton.textContent = 'GAME IN PROGRESS';
@@ -342,6 +491,9 @@
             timeLeft--;
             timerElement.textContent = timeLeft;
             
+            // Calculate time survived
+            timeSurvived = 60 - timeLeft;
+            
             // Change timer color when time is running low
             if (timeLeft <= 10) {
                 timerElement.style.color = '#ff6b6b';
@@ -351,7 +503,7 @@
             
             // End game if time runs out
             if (timeLeft <= 0) {
-                endGame();
+                endGame("TIME'S UP!");
             }
         }
         
@@ -362,11 +514,19 @@
             bubbleInterval = setInterval(() => {
                 if (!gameActive) return;
                 
-                // Check if we've reached max bubbles
-                const currentBubbles = document.querySelectorAll('.bubble:not(.popped)').length;
-                if (currentBubbles >= settings.maxBubbles) return;
-                
+                // Create a new bubble
                 createBubble();
+                
+                // Update bubble count
+                updateBubbleCount();
+                
+                // Check for failure condition
+                if (currentBubbles >= maxBubblesAllowed) {
+                    endGame("TOO MANY BUBBLES!");
+                }
+                
+                // Update danger zone
+                updateDangerZone();
             }, settings.bubbleSpawnRate);
         }
         
@@ -405,6 +565,9 @@
                 points = 30;
             }
             
+            // Apply difficulty multiplier
+            points = Math.floor(points * settings.pointsMultiplier);
+            
             // Store points as data attribute
             bubble.dataset.points = points;
             
@@ -418,6 +581,9 @@
             setTimeout(() => {
                 if (bubble.parentNode && !bubble.classList.contains('popped')) {
                     bubble.remove();
+                    currentBubbles--;
+                    updateBubbleCount();
+                    updateDangerZone();
                 }
             }, settings.bubbleLifespan);
         }
@@ -438,12 +604,17 @@
             // Update bubbles popped count
             bubblesPopped++;
             
+            // Update bubble count
+            currentBubbles--;
+            
             // Add time bonus
             const settings = difficultySettings[difficulty];
             timeLeft += settings.timeBonus;
             
             // Update display
             updateDisplay();
+            updateBubbleCount();
+            updateDangerZone();
             
             // Remove bubble after animation
             setTimeout(() => {
@@ -453,45 +624,101 @@
             }, 300);
         }
         
+        // Update bubble count display
+        function updateBubbleCount() {
+            // Count current bubbles on screen
+            const bubbles = document.querySelectorAll('.bubble:not(.popped)');
+            currentBubbles = bubbles.length;
+            
+            // Update display
+            bubbleCountElement.textContent = currentBubbles;
+            
+            // Change color based on danger level
+            if (currentBubbles >= dangerThreshold) {
+                bubbleCountElement.style.color = '#ff6b6b';
+                
+                // Add danger class to bubbles
+                bubbles.forEach(bubble => {
+                    if (currentBubbles >= dangerThreshold) {
+                        bubble.classList.add('danger');
+                    }
+                });
+            } else if (currentBubbles >= dangerThreshold - 5) {
+                bubbleCountElement.style.color = '#ffa502';
+            } else {
+                bubbleCountElement.style.color = 'white';
+                
+                // Remove danger class from bubbles
+                bubbles.forEach(bubble => {
+                    bubble.classList.remove('danger');
+                });
+            }
+        }
+        
+        // Update danger zone visualization
+        function updateDangerZone() {
+            const fillPercentage = (currentBubbles / maxBubblesAllowed) * 100;
+            const maxHeight = 100; // Maximum height in pixels
+            
+            // Calculate new height
+            dangerZoneHeight = Math.min(fillPercentage / 100 * maxHeight, maxHeight);
+            dangerZone.style.height = `${dangerZoneHeight}px`;
+            
+            // Change color based on fill level
+            if (fillPercentage >= 80) {
+                dangerZone.style.background = 'rgba(255, 71, 87, 0.9)';
+            } else if (fillPercentage >= 60) {
+                dangerZone.style.background = 'rgba(255, 165, 2, 0.8)';
+            } else {
+                dangerZone.style.background = 'rgba(255, 71, 87, 0.7)';
+            }
+        }
+        
         // Update the display
         function updateDisplay() {
             scoreElement.textContent = score;
             timerElement.textContent = timeLeft;
-            bubblesPoppedElement.textContent = bubblesPopped;
         }
         
         // End the game
-        function endGame() {
+        function endGame(reason) {
+            if (!gameActive) return;
+            
             gameActive = false;
             
             // Clear intervals
             clearInterval(gameTimer);
             clearInterval(bubbleInterval);
             
+            // Update game over screen
+            gameOverTitle.textContent = reason || "GAME OVER";
+            finalScoreElement.textContent = score;
+            finalBubblesElement.textContent = bubblesPopped;
+            finalTimeElement.textContent = `${timeSurvived} seconds`;
+            finalDifficultyElement.textContent = difficulty.toUpperCase();
+            
+            // Show game over screen
+            setTimeout(() => {
+                gameOverScreen.classList.add('active');
+            }, 500);
+            
             // Update button
             startButton.textContent = 'PLAY AGAIN';
             startButton.style.background = 'linear-gradient(to right, #00b09b, #96c93d)';
+        }
+        
+        // Restart the game
+        function restartGame() {
+            // Hide game over screen
+            gameOverScreen.classList.remove('active');
             
-            // Remove all bubbles
-            const bubbles = document.querySelectorAll('.bubble');
-            bubbles.forEach(bubble => {
-                bubble.classList.add('popped');
-                setTimeout(() => {
-                    if (bubble.parentNode) {
-                        bubble.remove();
-                    }
-                }, 300);
-            });
-            
-            // Show game over message
-            setTimeout(() => {
-                alert(`Game Over!\nYour final score: ${score}\nBubbles popped: ${bubblesPopped}`);
-            }, 500);
+            // Start a new game
+            startGame();
         }
         
         // Initialize the game when page loads
         window.onload = init;
     </script>
-</body>
 
+</body>
 </html>
